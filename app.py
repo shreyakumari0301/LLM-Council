@@ -29,37 +29,37 @@ st.markdown("""
         padding: 1rem;
     }
     
-    /* Assistant message background - dark for white text */
+    /* Assistant message background - light for black text */
     div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAssistant"]) {
-        background-color: #1a1a1a;
+        background-color: #f8f9fa;
         border-radius: 8px;
     }
     
-    /* Assistant message text - white */
+    /* Assistant message text - black */
     div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAssistant"]) .stMarkdown {
-        color: #ffffff !important;
+        color: #212529 !important;
     }
     
     div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAssistant"]) .stMarkdown p {
-        color: #ffffff !important;
+        color: #212529 !important;
     }
     
     div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAssistant"]) .stMarkdown h1,
     div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAssistant"]) .stMarkdown h2,
     div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAssistant"]) .stMarkdown h3 {
-        color: #ffffff !important;
+        color: #212529 !important;
     }
     
     div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAssistant"]) .stMarkdown strong {
-        color: #ffffff !important;
+        color: #212529 !important;
     }
     
     div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAssistant"]) .stMarkdown li {
-        color: #ffffff !important;
+        color: #212529 !important;
     }
     
     div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAssistant"]) .stCaption {
-        color: #cccccc !important;
+        color: #6c757d !important;
     }
     
     /* User message styling */
@@ -133,14 +133,14 @@ if "council" not in st.session_state:
 
 # Header
 st.title("🤖 LLM Council Chat")
-st.markdown("Ask questions and get verified answers from multiple LLMs")
+st.markdown("Ask questions and get crisp, to-the-point answers from multiple LLMs")
 
 # Mode selection dropdown - All or individual providers
 mode_options = ["Sequential Refinement", "All"] + st.session_state.available_providers
 mode = st.selectbox(
     "Response Mode",
     mode_options,
-    help="Sequential Refinement: LLM 1 generates, LLM 2+ refines iteratively. All: Show all independent responses. Provider: Single provider only."
+    help="Sequential Refinement: LLM 1 generates, LLM 2+ refines for crisp answers. All: All LLMs synthesize into one concise answer. Provider: Single provider only."
 )
 
 # Display chat history
@@ -219,44 +219,51 @@ if prompt := st.chat_input("Type your question here..."):
     
     # Get response based on mode
     with st.chat_message("assistant"):
-        with st.spinner("Processing your question..."):
-            try:
-                if mode == "Sequential Refinement":
-                    # Run sequential refinement
-                    result = asyncio.run(st.session_state.council.sequential_refine(prompt, verbose=False))
-                    
-                    # Show refinement chain
-                    st.markdown("### Refinement Chain:")
-                    for step in result["refinement_chain"]:
-                        if step["stage"] == "initial":
-                            st.markdown(f"**Initial Response ({step['provider']}):**")
-                            st.markdown(step["response"])
-                        else:
-                            refinement_num = step['stage'].split('_')[1]
-                            st.markdown(f"**Refinement {refinement_num} ({step['provider']}):**")
-                            
-                            # Show analysis in an expander
-                            with st.expander(f"🔍 Analysis - What's Missing/Wrong"):
-                                st.markdown(step["analysis"])
-                            
-                            # Show refined response
-                            st.markdown("**Refined Output:**")
-                            st.markdown(step["response"])
-                        st.markdown("---")
-                    
-                    # Show final answer
-                    st.markdown("### ✅ Final Optimized Answer:")
-                    st.markdown(result["final_answer"])
-                    
-                    assistant_message = {
-                        "role": "assistant",
-                        "content": result["final_answer"],
-                        "mode": "Sequential Refinement",
-                        "provider": None,
-                        "refinement_chain": result["refinement_chain"]
-                    }
+        try:
+            if mode == "Sequential Refinement":
+                # Show progress for sequential refinement
+                progress_bar = st.progress(0, text="Generating initial response...")
+                status_text = st.empty()
                 
-                elif mode == "All":
+                # Run sequential refinement
+                result = asyncio.run(st.session_state.council.sequential_refine(prompt, verbose=False))
+                
+                progress_bar.empty()
+                status_text.empty()
+                
+                # Show refinement chain
+                st.markdown("### Refinement Chain:")
+                for step in result["refinement_chain"]:
+                    if step["stage"] == "initial":
+                        st.markdown(f"**Initial Response ({step['provider']}):**")
+                        st.markdown(step["response"])
+                    else:
+                        refinement_num = step['stage'].split('_')[1]
+                        st.markdown(f"**Refinement {refinement_num} ({step['provider']}):**")
+                        
+                        # Show analysis in an expander
+                        with st.expander(f"🔍 Analysis - What's Missing/Wrong"):
+                            st.markdown(step["analysis"])
+                        
+                        # Show refined response
+                        st.markdown("**Refined Output:**")
+                        st.markdown(step["response"])
+                    st.markdown("---")
+                
+                # Show final answer
+                st.markdown("### ✅ Final Optimized Answer:")
+                st.markdown(result["final_answer"])
+                
+                assistant_message = {
+                    "role": "assistant",
+                    "content": result["final_answer"],
+                    "mode": "Sequential Refinement",
+                    "provider": None,
+                    "refinement_chain": result["refinement_chain"]
+                }
+                
+            elif mode == "All":
+                with st.spinner("Consulting all LLMs..."):
                     # Run full council consultation
                     result = asyncio.run(st.session_state.council.consult(prompt, verbose=False))
                     
@@ -295,7 +302,8 @@ if prompt := st.chat_input("Type your question here..."):
                             "confidence": result["confidence"]
                         }
                     }
-                else:
+            else:
+                with st.spinner(f"Querying {mode}..."):
                     # Query only the selected provider (independent mode)
                     selected_provider = None
                     for provider in st.session_state.council.providers:
@@ -315,10 +323,10 @@ if prompt := st.chat_input("Type your question here..."):
                         }
                     else:
                         raise ValueError(f"Provider {mode} not found")
-                
-                st.session_state.messages.append(assistant_message)
-                
-            except Exception as e:
+            
+            st.session_state.messages.append(assistant_message)
+            
+        except Exception as e:
                 error_msg = f"Error: {str(e)}"
                 st.error(error_msg)
                 st.session_state.messages.append({
@@ -332,11 +340,11 @@ if prompt := st.chat_input("Type your question here..."):
 with st.sidebar:
     st.header("About")
     st.markdown("""
-    **LLM Council** uses multiple AI models to generate optimized responses.
+    **LLM Council** uses multiple AI models as summarizers to generate crisp, to-the-point answers.
     
     **Response Modes:**
-    - **Sequential Refinement**: LLM 1 generates initial response → LLM 2 refines it → Final optimized output (iterative improvement)
-    - **All**: All LLMs respond independently, then cross-critique and synthesize
+    - **Sequential Refinement**: LLM 1 generates → LLM 2+ refines for maximum conciseness
+    - **All**: All LLMs respond independently, then synthesize into one crisp answer
     - **Provider Name** (Groq/Ollama/Mistral): Single provider only
     """)
     

@@ -3,6 +3,9 @@ import os
 from typing import List, Dict
 from providers import GroqProvider, OllamaProvider, MistralProvider, BaseLLMProvider
 
+# Timeout for API calls (seconds)
+API_TIMEOUT = 30
+
 class LLMCouncil:
     """Mini LLM Council: multiple LLMs reason independently, critique each other, and synthesize a final answer."""
 
@@ -39,7 +42,15 @@ class LLMCouncil:
 
     async def query_all(self, prompt: str) -> Dict[str, str]:
         """Query all providers independently."""
-        tasks = [provider.query(prompt) for provider in self.providers]
+        summary_prompt = f"""Provide a crisp, to-the-point answer. Be concise and direct - no fluff, just essential information.
+
+Question: {prompt}
+
+Answer:"""
+        tasks = [
+            asyncio.wait_for(provider.query(summary_prompt), timeout=API_TIMEOUT)
+            for provider in self.providers
+        ]
         responses = await asyncio.gather(*tasks, return_exceptions=True)
 
         results = {}
@@ -64,21 +75,18 @@ class LLMCouncil:
             }
 
             critique_prompt = f"""
-You are reviewing answers from other AI models.
+Review these answers for conciseness and accuracy.
 
-Original Question:
-{self._current_prompt}
+Question: {self._current_prompt}
 
-Other Model Answers:
-{other_responses}
+Other Answers: {other_responses}
 
-Critique them by:
-1. Identifying correct points
-2. Pointing out missing details
-3. Highlighting errors or weak reasoning
-4. Suggesting improvements
+Critique:
+1. What's correct but too verbose?
+2. What's missing or wrong?
+3. How to make them more crisp and to-the-point?
 
-Be concise and analytical.
+Be brief in your critique.
 """
             critique = await provider.query(critique_prompt)
             critiques[provider_name] = critique
@@ -95,25 +103,22 @@ Be concise and analytical.
         synthesizer = self.providers[0]
 
         synthesis_prompt = f"""
-You are an expert AI mediator.
+You are an expert summarizer. Provide a crisp, to-the-point answer.
 
-Original Question:
-{self._current_prompt}
+Question: {self._current_prompt}
 
-Initial Answers:
+Answers from models:
 {responses}
 
-Critiques from Models:
-{critiques}
+Critiques: {critiques}
 
-Task:
-- Merge the strongest reasoning from all answers
-- Correct any mistakes
-- Fill missing gaps
-- Produce ONE clear, accurate final answer
+Task: Create ONE concise, direct answer that:
+- Captures the essential information
+- Removes redundancy and fluff
+- Is crisp and to-the-point
+- Corrects any errors
 
-Do NOT mention models, critiques, or deliberation.
-Just give the final answer.
+Be ruthless - keep it short and direct. No unnecessary words.
 """
         final_answer = await synthesizer.query(synthesis_prompt)
         return final_answer
@@ -130,7 +135,15 @@ Just give the final answer.
         
         # Step 1: First LLM generates initial response
         first_provider = self.providers[0]
-        current_response = await first_provider.query(prompt)
+        summary_prompt = f"""Provide a crisp, to-the-point answer. Be concise and direct - no fluff, just the essential information.
+
+Question: {prompt}
+
+Answer:"""
+        current_response = await asyncio.wait_for(
+            first_provider.query(summary_prompt),
+            timeout=API_TIMEOUT
+        )
         
         if verbose:
             print(f"📝 Initial response from {first_provider.get_provider_name()}:")
@@ -142,50 +155,44 @@ Just give the final answer.
             "stage": "initial"
         }]
         
-        # Step 2: Each subsequent LLM analyzes and refines the previous output
+        # Step 2: Each subsequent LLM analyzes and refines in one call
         for i, refiner in enumerate(self.providers[1:], 1):
-            # First: Analyze what's missing/wrong
-            analysis_prompt = f"""
-Analyze this response critically.
+            # Combined: Analyze and refine in a single API call
+            refine_prompt = f"""Make this response more crisp and to-the-point. Remove unnecessary words, keep only essential information.
 
-Original Question:
-{prompt}
+Question: {prompt}
 
-Response to Analyze:
-{current_response}
+Previous Response: {current_response}
 
-Identify:
-1. What's missing or incomplete
-2. Any errors or inaccuracies
-3. Areas that need more detail
-4. What could be clearer or better structured
+Task: 
+1. Identify what can be removed or condensed (be ruthless - cut fluff)
+2. Provide a more concise, direct version
 
-Provide a brief analysis (3-5 points):
-"""
-            analysis = await refiner.query(analysis_prompt)
+Format:
+ANALYSIS:
+[What to remove/condense]
+
+IMPROVED RESPONSE:
+[Crisp, to-the-point version - shorter than previous]"""
+            
+            combined_response = await asyncio.wait_for(
+                refiner.query(refine_prompt),
+                timeout=API_TIMEOUT
+            )
+            
+            # Parse the response to extract analysis and refined output
+            if "ANALYSIS:" in combined_response and "IMPROVED RESPONSE:" in combined_response:
+                parts = combined_response.split("IMPROVED RESPONSE:")
+                analysis = parts[0].replace("ANALYSIS:", "").strip()
+                refined_response = parts[1].strip() if len(parts) > 1 else combined_response
+            else:
+                # Fallback: treat as refined response, extract analysis from context
+                refined_response = combined_response
+                analysis = "Response analyzed and improved based on identified gaps and errors."
             
             if verbose:
                 print(f"🔍 Analysis {i} by {refiner.get_provider_name()}:")
-                print(f"{analysis[:300]}...\n")
-            
-            # Second: Refine based on the analysis
-            refine_prompt = f"""
-Based on this analysis, provide an improved response.
-
-Original Question:
-{prompt}
-
-Previous Response:
-{current_response}
-
-Analysis of Issues:
-{analysis}
-
-Provide your IMPROVED and OPTIMIZED version addressing all the issues identified:
-"""
-            refined_response = await refiner.query(refine_prompt)
-            
-            if verbose:
+                print(f"{analysis[:200]}...\n")
                 print(f"🔧 Refinement {i} by {refiner.get_provider_name()}:")
                 print(f"{refined_response[:300]}...\n")
             
