@@ -118,6 +118,96 @@ Just give the final answer.
         final_answer = await synthesizer.query(synthesis_prompt)
         return final_answer
 
+    async def sequential_refine(self, prompt: str, verbose: bool = True) -> Dict:
+        """Sequential refinement: LLM 1 generates, LLM 2+ refines iteratively."""
+        self._current_prompt = prompt
+        
+        if len(self.providers) < 2:
+            raise ValueError("Sequential refinement requires at least 2 providers")
+        
+        if verbose:
+            print("🔄 Starting sequential refinement...\n")
+        
+        # Step 1: First LLM generates initial response
+        first_provider = self.providers[0]
+        current_response = await first_provider.query(prompt)
+        
+        if verbose:
+            print(f"📝 Initial response from {first_provider.get_provider_name()}:")
+            print(f"{current_response[:300]}...\n")
+        
+        refinement_chain = [{
+            "provider": first_provider.get_provider_name(),
+            "response": current_response,
+            "stage": "initial"
+        }]
+        
+        # Step 2: Each subsequent LLM analyzes and refines the previous output
+        for i, refiner in enumerate(self.providers[1:], 1):
+            # First: Analyze what's missing/wrong
+            analysis_prompt = f"""
+Analyze this response critically.
+
+Original Question:
+{prompt}
+
+Response to Analyze:
+{current_response}
+
+Identify:
+1. What's missing or incomplete
+2. Any errors or inaccuracies
+3. Areas that need more detail
+4. What could be clearer or better structured
+
+Provide a brief analysis (3-5 points):
+"""
+            analysis = await refiner.query(analysis_prompt)
+            
+            if verbose:
+                print(f"🔍 Analysis {i} by {refiner.get_provider_name()}:")
+                print(f"{analysis[:300]}...\n")
+            
+            # Second: Refine based on the analysis
+            refine_prompt = f"""
+Based on this analysis, provide an improved response.
+
+Original Question:
+{prompt}
+
+Previous Response:
+{current_response}
+
+Analysis of Issues:
+{analysis}
+
+Provide your IMPROVED and OPTIMIZED version addressing all the issues identified:
+"""
+            refined_response = await refiner.query(refine_prompt)
+            
+            if verbose:
+                print(f"🔧 Refinement {i} by {refiner.get_provider_name()}:")
+                print(f"{refined_response[:300]}...\n")
+            
+            refinement_chain.append({
+                "provider": refiner.get_provider_name(),
+                "analysis": analysis,
+                "response": refined_response,
+                "stage": f"refinement_{i}"
+            })
+            
+            current_response = refined_response
+        
+        if verbose:
+            print("✅ Final Optimized Answer:\n")
+            print(current_response)
+        
+        return {
+            "question": prompt,
+            "refinement_chain": refinement_chain,
+            "final_answer": current_response
+        }
+
     async def consult(self, prompt: str, verbose: bool = True) -> Dict:
         """Main council consultation method."""
         self._current_prompt = prompt
