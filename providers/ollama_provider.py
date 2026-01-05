@@ -36,6 +36,17 @@ class OllamaProvider(BaseLLMProvider):
         import asyncio
         try:
             model = model or self.default_model
+            
+            # Check if model is available
+            try:
+                models_response = requests.get(f"{self.base_url}/api/tags", timeout=2)
+                if models_response.status_code == 200:
+                    available_models = [m.get("name", "") for m in models_response.json().get("models", [])]
+                    if model not in available_models:
+                        return f"Error: Model '{model}' not found. Available models: {', '.join(available_models) if available_models else 'none'}. Run: ollama pull {model}"
+            except:
+                pass  # Skip model check if it fails
+            
             loop = asyncio.get_event_loop()
             
             if self.client:

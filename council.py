@@ -49,10 +49,13 @@ Question: {prompt}
 
 Answer:"""
         async def query_with_timeout(provider, prompt):
+            provider_name = provider.get_provider_name()
+            # Use longer timeout for Ollama (local models can be slower)
+            timeout = OLLAMA_TIMEOUT if provider_name == "Ollama" else API_TIMEOUT
             try:
-                return await asyncio.wait_for(provider.query(prompt), timeout=API_TIMEOUT)
+                return await asyncio.wait_for(provider.query(prompt), timeout=timeout)
             except asyncio.TimeoutError:
-                return Exception(f"Timeout after {API_TIMEOUT}s")
+                return Exception(f"Timeout after {timeout}s")
             except Exception as e:
                 return Exception(str(e))
         
@@ -97,14 +100,16 @@ Critique:
 
 Be brief in your critique.
 """
+            # Use longer timeout for Ollama
+            timeout = OLLAMA_TIMEOUT if provider_name == "Ollama" else API_TIMEOUT
             try:
                 critique = await asyncio.wait_for(
                     provider.query(critique_prompt),
-                    timeout=API_TIMEOUT
+                    timeout=timeout
                 )
                 critiques[provider_name] = critique
             except asyncio.TimeoutError:
-                critiques[provider_name] = f"Timeout after {API_TIMEOUT}s"
+                critiques[provider_name] = f"Timeout after {timeout}s. If using Ollama, make sure it's running and the model is downloaded."
             except Exception as e:
                 critiques[provider_name] = f"Error: {str(e)}"
 
