@@ -8,15 +8,40 @@ def main():
     load_dotenv()
     
     if len(sys.argv) < 2:
-        print("Usage: python main.py \"Your question here\"")
+        print("Usage: python main.py \"Your question here\" [mode]")
+        print("\nModes:")
+        print("  (default) - All: All LLMs respond, cross-critique, and synthesize")
+        print("  sequential - Sequential Refinement: Both LLMs respond independently, then combine")
+        print("  summarize - Summarizer: Short bullet points")
         sys.exit(1)
     
-    prompt = " ".join(sys.argv[1:])
+    # Check if last argument is a mode
+    if len(sys.argv) > 2 and sys.argv[-1] in ["sequential", "summarize"]:
+        mode = sys.argv[-1]
+        prompt = " ".join(sys.argv[1:-1])
+    else:
+        mode = "all"
+        prompt = " ".join(sys.argv[1:])
     
     council = LLMCouncil()
     
     try:
-        result = asyncio.run(council.consult(prompt))
+        if mode == "sequential":
+            result = asyncio.run(council.sequential_refine(prompt))
+            print("\n📝 Independent Responses:")
+            for provider, response in result["independent_responses"].items():
+                print(f"\n{provider}:")
+                print(response)
+            print("\n🔍 Analysis:")
+            print(result.get("analysis", ""))
+            print("\n✅ Final Optimized Answer:")
+            print(result["final_answer"])
+        elif mode == "summarize":
+            result = asyncio.run(council.summarize(prompt))
+            print("\n📋 Summary:")
+            print(result["summary"])
+        else:
+            result = asyncio.run(council.consult(prompt))
         return result
     except KeyboardInterrupt:
         print("\n\nInterrupted by user.")

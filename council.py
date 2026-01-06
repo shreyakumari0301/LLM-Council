@@ -1,7 +1,12 @@
 import asyncio
 import os
+import sys
 from typing import List, Dict
 from providers import GroqProvider, OllamaProvider, MistralProvider, BaseLLMProvider
+
+# Add utils to path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from utils.memory import ConversationMemory
 
 # Timeout for API calls (seconds)
 API_TIMEOUT = 60  # Increased to 60 seconds for slower APIs
@@ -14,6 +19,7 @@ class LLMCouncil:
         self.providers: List[BaseLLMProvider] = []
         self._initialize_providers()
         self._current_prompt: str = ""
+        self.memory = ConversationMemory(max_history=10)
 
     def _initialize_providers(self):
         """Initialize all LLM providers based on environment configuration."""
@@ -153,9 +159,15 @@ Be ruthless - keep it short and direct. No unnecessary words.
         except Exception as e:
             raise RuntimeError(f"Error during synthesis: {str(e)}")
 
-    async def sequential_refine(self, prompt: str, verbose: bool = True) -> Dict:
+    async def sequential_refine(self, prompt: str, verbose: bool = True, use_memory: bool = True) -> Dict:
         """Sequential refinement: LLM 1 generates, LLM 2+ refines by finding missing info and adding it."""
-        self._current_prompt = prompt
+        # Build prompt with conversation context if memory is enabled
+        if use_memory and self.memory.history:
+            contextual_prompt = self.memory.build_prompt_with_context(prompt)
+        else:
+            contextual_prompt = prompt
+        
+        self._current_prompt = contextual_prompt
         
         if len(self.providers) < 2:
             raise ValueError("Sequential refinement requires at least 2 providers")
@@ -173,7 +185,7 @@ Question: {prompt}
 
 Answer:"""
         
-        # Get independent responses in parallel
+        # Get independent responses in parallel with fallback
         async def get_independent_response(provider):
             provider_name = provider.get_provider_name()
             # Use longer timeout for Ollama (local models can be slower)
@@ -184,17 +196,58 @@ Answer:"""
                     timeout=timeout
                 )
             except asyncio.TimeoutError:
+                if provider_name == "Ollama":
+                    # Ollama timed out - return None to trigger fallback
+                    if verbose:
+                        print(f"⚠️  Warning: {provider_name} timed out after {timeout} seconds. Skipping Ollama.")
+                    return None
                 raise RuntimeError(
-                    f"{provider_name} timed out after {timeout} seconds. "
-                    f"If using Ollama, make sure it's running and the model is downloaded: 'ollama pull {getattr(provider, 'default_model', 'llama3.1')}'"
+                    f"{provider_name} timed out after {timeout} seconds."
                 )
             except Exception as e:
+                if provider_name == "Ollama":
+                    if verbose:
+                        print(f"⚠️  Warning: {provider_name} error: {str(e)}. Skipping Ollama.")
+                    return None
                 raise RuntimeError(f"Error from {provider_name}: {str(e)}")
         
-        first_response, second_response = await asyncio.gather(
+        # Get responses - allow one to fail if it's Ollama
+        results = await asyncio.gather(
             get_independent_response(first_provider),
-            get_independent_response(second_provider)
+            get_independent_response(second_provider),
+            return_exceptions=True
         )
+        
+        first_response = results[0]
+        second_response = results[1]
+        
+        # Handle Ollama timeout - use only Groq if Ollama fails
+        if first_response is None or isinstance(first_response, Exception):
+            if verbose:
+                print("⚠️  Using only Groq since Ollama timed out. For better results, disable Ollama in .env: USE_OLLAMA=false")
+            # Use only the working provider
+            working_provider = second_provider if first_response is None else first_provider
+            working_response = second_response if first_response is None else first_response
+            return {
+                "question": prompt,
+                "independent_responses": {
+                    working_provider.get_provider_name(): working_response
+                },
+                "analysis": "Ollama timed out - using single provider response.",
+                "final_answer": working_response
+            }
+        
+        if second_response is None or isinstance(second_response, Exception):
+            if verbose:
+                print("⚠️  Using only Groq since Ollama timed out. For better results, disable Ollama in .env: USE_OLLAMA=false")
+            return {
+                "question": prompt,
+                "independent_responses": {
+                    first_provider.get_provider_name(): first_response
+                },
+                "analysis": "Ollama timed out - using single provider response.",
+                "final_answer": first_response
+            }
         
         if verbose:
             print(f"📝 Independent response from {first_provider.get_provider_name()}:")
@@ -235,7 +288,7 @@ OPTIMIZED RESPONSE:
             )
         except asyncio.TimeoutError:
             raise RuntimeError(
-                f"Refinement by {refiner_name} timed out after {API_TIMEOUT} seconds. "
+                f"Refinement by {refiner_name} timed out after {timeout} seconds. "
                 f"This might be due to slow API response or network issues."
             )
         except Exception as e:
@@ -259,6 +312,11 @@ OPTIMIZED RESPONSE:
             print(f"{analysis[:200]}...\n")
             print("✅ Final Optimized Answer:\n")
             print(optimized_response)
+        
+        # Save to conversation memory
+        if use_memory:
+            self.memory.add_message("user", prompt)
+            self.memory.add_message("assistant", optimized_response)
         
         return {
             "question": prompt,
@@ -311,9 +369,15 @@ Answer:"""
             "summary": summary
         }
 
-    async def consult(self, prompt: str, verbose: bool = True) -> Dict:
+    async def consult(self, prompt: str, verbose: bool = True, use_memory: bool = True) -> Dict:
         """Main council consultation method."""
-        self._current_prompt = prompt
+        # Build prompt with conversation context if memory is enabled
+        if use_memory and self.memory.history:
+            contextual_prompt = self.memory.build_prompt_with_context(prompt)
+        else:
+            contextual_prompt = prompt
+        
+        self._current_prompt = contextual_prompt
 
         if verbose:
             print("🤖 Council members are deliberating...\n")
@@ -343,6 +407,11 @@ Answer:"""
         if verbose:
             print("✅ Final Answer:\n")
             print(final_answer)
+
+        # Save to conversation memory
+        if use_memory:
+            self.memory.add_message("user", prompt)
+            self.memory.add_message("assistant", final_answer)
 
         return {
             "question": prompt,

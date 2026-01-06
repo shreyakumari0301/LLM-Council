@@ -130,15 +130,16 @@ st.markdown("""
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "council" not in st.session_state:
-    try:
-        st.session_state.council = LLMCouncil()
-        # Get available provider names
-        st.session_state.available_providers = [
-            provider.get_provider_name() for provider in st.session_state.council.providers
-        ]
-    except Exception as e:
-        st.error(f"Failed to initialize LLM Council: {e}")
-        st.stop()
+    with st.spinner("Initializing LLM Council..."):
+        try:
+            st.session_state.council = LLMCouncil()
+            # Get available provider names
+            st.session_state.available_providers = [
+                provider.get_provider_name() for provider in st.session_state.council.providers
+            ]
+        except Exception as e:
+            st.error(f"Failed to initialize LLM Council: {e}")
+            st.stop()
 
 # Header
 st.title("🤖 LLM Council Chat")
@@ -251,19 +252,17 @@ if prompt := st.chat_input("Type your question here..."):
     with st.chat_message("assistant"):
         try:
             if mode == "Sequential Refinement":
-                # Show progress for sequential refinement
-                progress_bar = st.progress(0, text="Generating initial response...")
-                status_text = st.empty()
+                # Show progress immediately
+                status_placeholder = st.empty()
+                status_placeholder.info("🔄 Processing... This may take 30-60 seconds.")
                 
-                # Show which providers will be used
-                providers_list = [p.get_provider_name() for p in st.session_state.council.providers]
-                status_text.info(f"Using providers: {' → '.join(providers_list)}")
-                
-                # Run sequential refinement
-                result = asyncio.run(st.session_state.council.sequential_refine(prompt, verbose=False))
-                
-                progress_bar.empty()
-                status_text.empty()
+                # Run sequential refinement (non-blocking display)
+                try:
+                    result = asyncio.run(st.session_state.council.sequential_refine(prompt, verbose=False))
+                    status_placeholder.empty()
+                except Exception as e:
+                    status_placeholder.empty()
+                    raise
                 
                 # Show independent responses
                 st.markdown("### Independent Responses:")
@@ -291,57 +290,71 @@ if prompt := st.chat_input("Type your question here..."):
                 }
             
             elif mode == "Summarizer":
-                with st.spinner("Generating summary..."):
+                status_placeholder = st.empty()
+                status_placeholder.info("🔄 Generating summary...")
+                try:
                     # Run summarizer
                     result = asyncio.run(st.session_state.council.summarize(prompt, verbose=False))
-                    
-                    # Show summary as bullet points
-                    st.markdown(result["summary"])
-                    
-                    assistant_message = {
-                        "role": "assistant",
-                        "content": result["summary"],
-                        "mode": "Summarizer",
-                        "provider": None,
-                        "summary": result["summary"]
-                    }
+                    status_placeholder.empty()
+                except Exception as e:
+                    status_placeholder.empty()
+                    raise
+                
+                # Show summary as bullet points
+                st.markdown(result["summary"])
+                
+                assistant_message = {
+                    "role": "assistant",
+                    "content": result["summary"],
+                    "mode": "Summarizer",
+                    "provider": None,
+                    "summary": result["summary"]
+                }
                 
             elif mode == "All":
-                with st.spinner("Consulting all LLMs..."):
+                status_placeholder = st.empty()
+                status_placeholder.info("🔄 Consulting all LLMs... This may take 30-60 seconds.")
+                try:
                     # Run full council consultation
                     result = asyncio.run(st.session_state.council.consult(prompt, verbose=False))
-                    
-                    # Show all individual responses first
-                    st.markdown("### Individual Responses:")
-                    for provider, response in result["responses"].items():
-                        st.markdown(f"**{provider}:**")
-                        st.markdown(response)
-                        st.markdown("---")
-                    
-                    # Show critiques
-                    st.markdown("### Critiques:")
-                    for provider, critique in result["critiques"].items():
-                        with st.expander(f"🔍 {provider} Critique"):
-                            st.markdown(critique)
-                    
+                    status_placeholder.empty()
+                except Exception as e:
+                    status_placeholder.empty()
+                    raise
+                
+                # Show all individual responses first
+                st.markdown("### Individual Responses:")
+                for provider, response in result["responses"].items():
+                    st.markdown(f"**{provider}:**")
+                    st.markdown(response)
                     st.markdown("---")
-                    
-                    # Then show optimized answer
-                    st.markdown("### ✅ Final Optimized Answer:")
-                    st.markdown(result["final_answer"])
-                    
-                    assistant_message = {
-                        "role": "assistant",
-                        "content": result["final_answer"],
-                        "mode": "All",
-                        "provider": None,
-                        "details": {
-                            "responses": result["responses"],
-                            "critiques": result["critiques"]
-                        }
+                
+                # Show critiques
+                st.markdown("### Critiques:")
+                for provider, critique in result["critiques"].items():
+                    with st.expander(f"🔍 {provider} Critique"):
+                        st.markdown(critique)
+                
+                st.markdown("---")
+                
+                # Then show optimized answer
+                st.markdown("### ✅ Final Optimized Answer:")
+                st.markdown(result["final_answer"])
+                
+                assistant_message = {
+                    "role": "assistant",
+                    "content": result["final_answer"],
+                    "mode": "All",
+                    "provider": None,
+                    "details": {
+                        "responses": result["responses"],
+                        "critiques": result["critiques"]
                     }
+                }
             else:
-                with st.spinner(f"Querying {mode}..."):
+                status_placeholder = st.empty()
+                status_placeholder.info(f"🔄 Querying {mode}...")
+                try:
                     # Query only the selected provider (independent mode)
                     selected_provider = None
                     for provider in st.session_state.council.providers:
@@ -351,6 +364,7 @@ if prompt := st.chat_input("Type your question here..."):
                     
                     if selected_provider:
                         response = asyncio.run(selected_provider.query(prompt))
+                        status_placeholder.empty()
                         st.markdown(response)
                         
                         assistant_message = {
@@ -361,6 +375,9 @@ if prompt := st.chat_input("Type your question here..."):
                         }
                     else:
                         raise ValueError(f"Provider {mode} not found")
+                except Exception as e:
+                    status_placeholder.empty()
+                    raise
             
             st.session_state.messages.append(assistant_message)
             
@@ -368,14 +385,20 @@ if prompt := st.chat_input("Type your question here..."):
             error_msg = f"Error: {str(e)}"
             st.error(error_msg)
             import traceback
-            with st.expander("Error Details"):
+            with st.expander("🔍 Error Details"):
                 st.code(traceback.format_exc())
-            st.session_state.messages.append({
+            
+            # Show error in chat
+            st.markdown(f"**❌ Error:** {error_msg}")
+            
+            assistant_message = {
                 "role": "assistant",
                 "content": error_msg,
                 "mode": mode,
-                "provider": mode if mode != "All" else None
-            })
+                "provider": mode if mode != "All" else None,
+                "error": True
+            }
+            st.session_state.messages.append(assistant_message)
 
 # Sidebar info
 with st.sidebar:
@@ -425,6 +448,31 @@ with st.sidebar:
     except:
         pass
     
-    if st.button("Clear Chat"):
-        st.session_state.messages = []
-        st.rerun()
+    st.markdown("---")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Clear Chat"):
+            st.session_state.messages = []
+            st.rerun()
+    
+    with col2:
+        if st.button("Clear Memory"):
+            if "council" in st.session_state:
+                st.session_state.council.memory.clear()
+            st.success("Conversation memory cleared!")
+    
+    st.markdown("---")
+    st.markdown("**Features:**")
+    st.markdown("✅ Response caching (saves API costs)")
+    st.markdown("✅ Conversation memory (context-aware)")
+    
+    st.markdown("---")
+    st.markdown("**Performance Tips:**")
+    st.markdown("""
+    - **First load**: May take 5-10s (initialization)
+    - **Cached queries**: Instant (0.1s)
+    - **New queries**: 10-60s (depends on mode)
+    - **Ollama**: Can be slow (120s timeout)
+    - **Tip**: Use Groq only for fastest responses
+    """)

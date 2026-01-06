@@ -31,19 +31,34 @@ class OllamaProvider(BaseLLMProvider):
         except Exception as e:
             raise ConnectionError(f"Failed to initialize Ollama client: {str(e)}")
     
-    async def query(self, prompt: str, model: Optional[str] = None) -> str:
+    async def _query_llm(self, prompt: str, model: Optional[str] = None) -> str:
         """Query Ollama API."""
         import asyncio
         try:
             model = model or self.default_model
             
-            # Check if model is available
+            # Check if model is available and normalize model name
             try:
                 models_response = requests.get(f"{self.base_url}/api/tags", timeout=2)
                 if models_response.status_code == 200:
                     available_models = [m.get("name", "") for m in models_response.json().get("models", [])]
-                    if model not in available_models:
-                        return f"Error: Model '{model}' not found. Available models: {', '.join(available_models) if available_models else 'none'}. Run: ollama pull {model}"
+                    # Normalize model name - remove tags for matching (e.g., "mistral:latest" -> "mistral")
+                    model_base = model.split(":")[0]
+                    
+                    # Check if model exists (with or without tag)
+                    model_found = False
+                    actual_model = model
+                    for avail_model in available_models:
+                        if avail_model == model or avail_model.startswith(f"{model_base}:"):
+                            actual_model = avail_model
+                            model_found = True
+                            break
+                    
+                    if not model_found:
+                        return f"Error: Model '{model}' not found. Available models: {', '.join(available_models) if available_models else 'none'}. Run: ollama pull {model_base}"
+                    
+                    # Use the actual model name with tag
+                    model = actual_model
             except:
                 pass  # Skip model check if it fails
             

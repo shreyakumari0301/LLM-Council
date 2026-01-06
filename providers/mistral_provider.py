@@ -13,7 +13,7 @@ class MistralProvider(BaseLLMProvider):
         self.client = Mistral(api_key=self.api_key)
         self.default_model = model
     
-    async def query(self, prompt: str, model: Optional[str] = None) -> str:
+    async def _query_llm(self, prompt: str, model: Optional[str] = None) -> str:
         """Query Mistral API."""
         import asyncio
         try:

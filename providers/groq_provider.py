@@ -13,7 +13,7 @@ class GroqProvider(BaseLLMProvider):
         self.client = Groq(api_key=self.api_key)
         self.default_model = model or os.getenv("GROQ_MODEL", "llama-3.1-70b-versatile")
     
-    async def query(self, prompt: str, model: Optional[str] = None) -> str:
+    async def _query_llm(self, prompt: str, model: Optional[str] = None) -> str:
         """Query Groq API."""
         import asyncio
         try:
