@@ -3,6 +3,7 @@ import asyncio
 import sys
 import warnings
 import logging
+import html
 from dotenv import load_dotenv
 from council import LLMCouncil
 
@@ -123,6 +124,128 @@ st.markdown("""
     .stButton > button:hover {
         background-color: #0b5ed7;
     }
+    
+    /* Provider Response Cards */
+    .provider-card {
+        background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+        border-left: 4px solid #0d6efd;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    
+    .provider-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    }
+    
+    .provider-card.groq {
+        border-left-color: #10b981;
+        background: linear-gradient(135deg, #ecfdf5 0%, #ffffff 100%);
+    }
+    
+    .provider-card.mistral {
+        border-left-color: #8b5cf6;
+        background: linear-gradient(135deg, #f5f3ff 0%, #ffffff 100%);
+    }
+    
+    .provider-card.ollama {
+        border-left-color: #f59e0b;
+        background: linear-gradient(135deg, #fffbeb 0%, #ffffff 100%);
+    }
+    
+    .provider-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 2px solid #e5e7eb;
+    }
+    
+    .provider-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-weight: 600;
+        font-size: 1.1rem;
+        color: #1f2937;
+    }
+    
+    .provider-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        font-weight: bold;
+    }
+    
+    .provider-icon.groq {
+        background: #10b981;
+        color: white;
+    }
+    
+    .provider-icon.mistral {
+        background: #8b5cf6;
+        color: white;
+    }
+    
+    .provider-icon.ollama {
+        background: #f59e0b;
+        color: white;
+    }
+    
+    .provider-content {
+        color: #374151;
+        line-height: 1.7;
+        font-size: 0.95rem;
+    }
+    
+    /* Final Answer Highlight */
+    .final-answer {
+        background: linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%);
+        border: 2px solid #3b82f6;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin: 1.5rem 0;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+    }
+    
+    .final-answer-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+        color: #1e40af;
+        font-weight: 600;
+        font-size: 1.2rem;
+    }
+    
+    /* Section Headers */
+    .section-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin: 2rem 0 1rem 0;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid #e5e7eb;
+        color: #1f2937;
+        font-weight: 600;
+        font-size: 1.3rem;
+    }
+    
+    /* Divider */
+    .response-divider {
+        height: 1px;
+        background: linear-gradient(to right, transparent, #e5e7eb, transparent);
+        margin: 1.5rem 0;
+        border: none;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -162,12 +285,30 @@ for message in st.session_state.messages:
             # Show based on current mode selection
             if mode == "Sequential Refinement" and stored_mode == "Sequential Refinement":
                 if "independent_responses" in message:
-                    # New format: Show independent responses
-                    st.markdown("### Independent Responses:")
+                    # New format: Show independent responses with styled cards
+                    st.markdown('<div class="section-header">📋 Independent Responses</div>', unsafe_allow_html=True)
+                    
+                    provider_icons = {
+                        "Groq": "🚀",
+                        "Mistral": "💜",
+                        "Ollama": "🦙"
+                    }
+                    
                     for provider, response in message["independent_responses"].items():
-                        st.markdown(f"**{provider}:**")
+                        icon = provider_icons.get(provider, "🤖")
+                        provider_lower = provider.lower()
+                        
+                        card_header = f"""
+                        <div class="provider-card {provider_lower}">
+                            <div class="provider-header">
+                                <div class="provider-icon {provider_lower}">{icon}</div>
+                                <div class="provider-badge">{provider}</div>
+                            </div>
+                        """
+                        st.markdown(card_header, unsafe_allow_html=True)
+                        st.markdown('<div class="provider-content">', unsafe_allow_html=True)
                         st.markdown(response)
-                        st.markdown("---")
+                        st.markdown('</div></div>', unsafe_allow_html=True)
                     
                     # Show analysis
                     if "analysis" in message:
@@ -175,8 +316,17 @@ for message in st.session_state.messages:
                             st.markdown(message["analysis"])
                     
                     # Show optimized answer
-                    st.markdown("### ✅ Final Optimized Answer:")
+                    final_answer_header = """
+                    <div class="final-answer">
+                        <div class="final-answer-header">
+                            <span>✨</span>
+                            <span>Final Optimized Answer</span>
+                        </div>
+                    """
+                    st.markdown(final_answer_header, unsafe_allow_html=True)
+                    st.markdown('<div class="provider-content">', unsafe_allow_html=True)
                     st.markdown(message["content"])
+                    st.markdown('</div></div>', unsafe_allow_html=True)
                 elif "refinement_chain" in message:
                     # Old format: Show refinement chain (backward compatibility)
                     st.markdown("### Refinement Chain:")
@@ -209,22 +359,49 @@ for message in st.session_state.messages:
             
             elif mode == "All" and stored_mode == "All" and "details" in message:
                 # Show all mode: individual responses first, then optimized
-                st.markdown("### Individual Responses:")
+                st.markdown('<div class="section-header">📋 Individual Responses</div>', unsafe_allow_html=True)
+                
+                provider_icons = {
+                    "Groq": "🚀",
+                    "Mistral": "💜",
+                    "Ollama": "🦙"
+                }
+                
                 for provider, response in message["details"]["responses"].items():
-                    st.markdown(f"**{provider}:**")
+                    icon = provider_icons.get(provider, "🤖")
+                    provider_lower = provider.lower()
+                    
+                    card_header = f"""
+                    <div class="provider-card {provider_lower}">
+                        <div class="provider-header">
+                            <div class="provider-icon {provider_lower}">{icon}</div>
+                            <div class="provider-badge">{provider}</div>
+                        </div>
+                    """
+                    st.markdown(card_header, unsafe_allow_html=True)
+                    st.markdown('<div class="provider-content">', unsafe_allow_html=True)
                     st.markdown(response)
-                    st.markdown("---")
+                    st.markdown('</div></div>', unsafe_allow_html=True)
                 
                 # Show critiques if available
                 if "critiques" in message["details"]:
-                    st.markdown("### Critiques:")
+                    st.markdown('<div class="section-header">🔍 Critiques</div>', unsafe_allow_html=True)
                     for provider, critique in message["details"]["critiques"].items():
                         with st.expander(f"🔍 {provider} Critique"):
                             st.markdown(critique)
-                    st.markdown("---")
                 
-                st.markdown("### ✅ Final Optimized Answer:")
+                # Final answer
+                final_answer_header = """
+                <div class="final-answer">
+                    <div class="final-answer-header">
+                        <span>✨</span>
+                        <span>Final Optimized Answer</span>
+                    </div>
+                """
+                st.markdown(final_answer_header, unsafe_allow_html=True)
+                st.markdown('<div class="provider-content">', unsafe_allow_html=True)
                 st.markdown(message["content"])
+                st.markdown('</div></div>', unsafe_allow_html=True)
             
             elif mode != "All" and message.get("provider") == mode:
                 # Show specific provider's independent response
@@ -264,21 +441,51 @@ if prompt := st.chat_input("Type your question here..."):
                     status_placeholder.empty()
                     raise
                 
-                # Show independent responses
-                st.markdown("### Independent Responses:")
+                # Show independent responses with styled cards
+                st.markdown('<div class="section-header">📋 Independent Responses</div>', unsafe_allow_html=True)
+                
+                provider_icons = {
+                    "Groq": "🚀",
+                    "Mistral": "💜",
+                    "Ollama": "🦙"
+                }
+                
                 for provider, response in result["independent_responses"].items():
-                    st.markdown(f"**{provider}:**")
+                    icon = provider_icons.get(provider, "🤖")
+                    provider_lower = provider.lower()
+                    
+                    # Card header with HTML
+                    card_header = f"""
+                    <div class="provider-card {provider_lower}">
+                        <div class="provider-header">
+                            <div class="provider-icon {provider_lower}">{icon}</div>
+                            <div class="provider-badge">{provider}</div>
+                        </div>
+                    """
+                    st.markdown(card_header, unsafe_allow_html=True)
+                    
+                    # Content with markdown support
+                    st.markdown(f'<div class="provider-content">', unsafe_allow_html=True)
                     st.markdown(response)
-                    st.markdown("---")
+                    st.markdown('</div></div>', unsafe_allow_html=True)
                 
                 # Show analysis
                 if "analysis" in result:
                     with st.expander("🔍 Analysis - What's Missing"):
                         st.markdown(result["analysis"])
                 
-                # Show optimized answer
-                st.markdown("### ✅ Final Optimized Answer:")
+                # Show optimized answer with highlight
+                final_answer_header = """
+                <div class="final-answer">
+                    <div class="final-answer-header">
+                        <span>✨</span>
+                        <span>Final Optimized Answer</span>
+                    </div>
+                """
+                st.markdown(final_answer_header, unsafe_allow_html=True)
+                st.markdown('<div class="provider-content">', unsafe_allow_html=True)
                 st.markdown(result["final_answer"])
+                st.markdown('</div></div>', unsafe_allow_html=True)
                 
                 assistant_message = {
                     "role": "assistant",
@@ -322,12 +529,30 @@ if prompt := st.chat_input("Type your question here..."):
                     status_placeholder.empty()
                     raise
                 
-                # Show all individual responses first
-                st.markdown("### Individual Responses:")
+                # Show all individual responses with styled cards
+                st.markdown('<div class="section-header">📋 Individual Responses</div>', unsafe_allow_html=True)
+                
+                provider_icons = {
+                    "Groq": "🚀",
+                    "Mistral": "💜",
+                    "Ollama": "🦙"
+                }
+                
                 for provider, response in result["responses"].items():
-                    st.markdown(f"**{provider}:**")
+                    icon = provider_icons.get(provider, "🤖")
+                    provider_lower = provider.lower()
+                    
+                    card_header = f"""
+                    <div class="provider-card {provider_lower}">
+                        <div class="provider-header">
+                            <div class="provider-icon {provider_lower}">{icon}</div>
+                            <div class="provider-badge">{provider}</div>
+                        </div>
+                    """
+                    st.markdown(card_header, unsafe_allow_html=True)
+                    st.markdown('<div class="provider-content">', unsafe_allow_html=True)
                     st.markdown(response)
-                    st.markdown("---")
+                    st.markdown('</div></div>', unsafe_allow_html=True)
                 
                 # Show critiques
                 st.markdown("### Critiques:")
@@ -337,9 +562,18 @@ if prompt := st.chat_input("Type your question here..."):
                 
                 st.markdown("---")
                 
-                # Then show optimized answer
-                st.markdown("### ✅ Final Optimized Answer:")
+                # Then show optimized answer with highlight
+                final_answer_header = """
+                <div class="final-answer">
+                    <div class="final-answer-header">
+                        <span>✨</span>
+                        <span>Final Optimized Answer</span>
+                    </div>
+                """
+                st.markdown(final_answer_header, unsafe_allow_html=True)
+                st.markdown('<div class="provider-content">', unsafe_allow_html=True)
                 st.markdown(result["final_answer"])
+                st.markdown('</div></div>', unsafe_allow_html=True)
                 
                 assistant_message = {
                     "role": "assistant",
